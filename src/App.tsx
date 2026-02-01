@@ -60,7 +60,7 @@ function App() {
         const date = getTodayDate()
         const apiUrl = `https://www.nytimes.com/svc/connections/v2/${date}.json`
         const response = await fetch(
-          `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`
         )
         if (!response.ok) {
           throw new Error('Failed to fetch puzzle')
