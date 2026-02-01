@@ -13,7 +13,7 @@ type ColorName = 'yellow' | 'green' | 'blue' | 'purple' | null
 interface TileData {
   word: string
   color: ColorName
-  dragOffset?: { x: number; y: number }
+  offset: { x: number; y: number }
 }
 
 // Mock data - TODO: fetch from NYT API
@@ -26,13 +26,13 @@ const MOCK_WORDS = [
 
 function App() {
   const [tiles, setTiles] = useState<TileData[]>(
-    MOCK_WORDS.map((word) => ({ word, color: null }))
+    MOCK_WORDS.map((word) => ({ word, color: null, offset: { x: 0, y: 0 } }))
   )
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const dragStart = useRef({ x: 0, y: 0 })
+  const startOffset = useRef({ x: 0, y: 0 })
   const isDragging = useRef(false)
-
 
   const getClientPos = (e: React.MouseEvent | React.TouchEvent) => {
     if ('touches' in e && e.touches.length > 0) {
@@ -47,6 +47,7 @@ function App() {
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, index: number) => {
     const pos = getClientPos(e)
     dragStart.current = { x: pos.x, y: pos.y }
+    startOffset.current = { ...tiles[index].offset }
     setDraggingIndex(index)
     isDragging.current = false
   }
@@ -64,20 +65,21 @@ function App() {
 
     setTiles((prev) =>
       prev.map((tile, i) =>
-        i === draggingIndex ? { ...tile, dragOffset: { x: dx, y: dy } } : tile
+        i === draggingIndex
+          ? {
+              ...tile,
+              offset: {
+                x: startOffset.current.x + dx,
+                y: startOffset.current.y + dy,
+              },
+            }
+          : tile
       )
     )
   }
 
   const handleDragEnd = (index?: number) => {
     if (draggingIndex !== null) {
-      // Clear drag offset
-      setTiles((prev) =>
-        prev.map((tile, i) =>
-          i === draggingIndex ? { ...tile, dragOffset: undefined } : tile
-        )
-      )
-
       // If it was a click (not a drag), toggle selection
       if (!isDragging.current && index !== undefined) {
         setSelectedIndex(index === selectedIndex ? null : index)
@@ -121,9 +123,7 @@ function App() {
               className={`tile ${draggingIndex === index ? 'dragging' : ''} ${selectedIndex === index ? 'selected' : ''}`}
               style={{
                 backgroundColor: getBackgroundColor(tile),
-                transform: tile.dragOffset
-                  ? `translate(${tile.dragOffset.x}px, ${tile.dragOffset.y}px) scale(1.05)`
-                  : undefined,
+                transform: `translate(${tile.offset.x}px, ${tile.offset.y}px)${draggingIndex === index ? ' scale(1.05)' : ''}`,
                 zIndex: draggingIndex === index ? 10 : 1,
               }}
               onMouseDown={(e) => {
@@ -138,7 +138,12 @@ function App() {
             </button>
 
             {selectedIndex === index && (
-              <div className="color-popup">
+              <div
+                className="color-popup"
+                style={{
+                  transform: `translate(${tile.offset.x}px, ${tile.offset.y}px)`,
+                }}
+              >
                 {COLORS.map((color) => (
                   <button
                     key={color.name}
