@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
 
-const TILE_WIDTH = 130
-const TILE_HEIGHT = 80
 const GAP = 8
 
 const COLORS = [
@@ -30,16 +28,6 @@ interface ConnectionsResponse {
   categories: ConnectionsCategory[]
 }
 
-
-function createTiles(words: string[]): TileData[] {
-  return words.map((word, index) => ({
-    word,
-    x: (index % 4) * (TILE_WIDTH + GAP),
-    y: Math.floor(index / 4) * (TILE_HEIGHT + GAP),
-    color: null,
-  }))
-}
-
 function getTodayDate(): string {
   const today = new Date()
   return today.toISOString().split('T')[0]
@@ -51,8 +39,38 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [tileSize, setTileSize] = useState({ width: 80, height: 50 })
+  const canvasRef = useRef<HTMLDivElement>(null)
   const dragOffset = useRef({ x: 0, y: 0 })
   const isDragging = useRef(false)
+
+  // Calculate tile size based on canvas width
+  useEffect(() => {
+    function updateTileSize() {
+      if (canvasRef.current) {
+        const canvasWidth = canvasRef.current.offsetWidth
+        const tileWidth = (canvasWidth - GAP * 3) / 4
+        const tileHeight = tileWidth * 0.6
+        setTileSize({ width: tileWidth, height: tileHeight })
+      }
+    }
+
+    updateTileSize()
+    window.addEventListener('resize', updateTileSize)
+    return () => window.removeEventListener('resize', updateTileSize)
+  }, [])
+
+  // Update tile positions when tile size changes
+  useEffect(() => {
+    setTiles((prev) => {
+      if (prev.length === 0) return prev
+      return prev.map((tile, index) => ({
+        ...tile,
+        x: (index % 4) * (tileSize.width + GAP),
+        y: Math.floor(index / 4) * (tileSize.height + GAP),
+      }))
+    })
+  }, [tileSize])
 
   useEffect(() => {
     async function fetchPuzzle() {
@@ -67,11 +85,17 @@ function App() {
         }
         const data: ConnectionsResponse = await response.json()
 
-        // Flatten all cards and sort by position to match game order
         const allCards = data.categories.flatMap((cat) => cat.cards)
         allCards.sort((a, b) => a.position - b.position)
         const words = allCards.map((card) => card.content)
-        setTiles(createTiles(words))
+        setTiles(
+          words.map((word, index) => ({
+            word,
+            x: (index % 4) * (tileSize.width + GAP),
+            y: Math.floor(index / 4) * (tileSize.height + GAP),
+            color: null,
+          }))
+        )
         setLoading(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -80,32 +104,50 @@ function App() {
     }
 
     fetchPuzzle()
-  }, [])
+  }, [tileSize])
 
-  const handleMouseDown = (e: React.MouseEvent, index: number) => {
+  const getClientPos = (e: React.MouseEvent | React.TouchEvent) => {
+    if ('touches' in e) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    return { x: e.clientX, y: e.clientY }
+  }
+
+  const getCanvasOffset = () => {
+    if (!canvasRef.current) return { x: 0, y: 0 }
+    const rect = canvasRef.current.getBoundingClientRect()
+    return { x: rect.left, y: rect.top }
+  }
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, index: number) => {
     const tile = tiles[index]
+    const clientPos = getClientPos(e)
+    const canvasOffset = getCanvasOffset()
     dragOffset.current = {
-      x: e.clientX - tile.x,
-      y: e.clientY - tile.y,
+      x: clientPos.x - canvasOffset.x - tile.x,
+      y: clientPos.y - canvasOffset.y - tile.y,
     }
     setDraggingIndex(index)
     isDragging.current = false
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (draggingIndex === null) return
 
     isDragging.current = true
+    const clientPos = getClientPos(e)
+    const canvasOffset = getCanvasOffset()
+
     const newTiles = [...tiles]
     newTiles[draggingIndex] = {
       ...newTiles[draggingIndex],
-      x: e.clientX - dragOffset.current.x,
-      y: e.clientY - dragOffset.current.y,
+      x: clientPos.x - canvasOffset.x - dragOffset.current.x,
+      y: clientPos.y - canvasOffset.y - dragOffset.current.y,
     }
     setTiles(newTiles)
   }
 
-  const handleMouseUp = (index?: number) => {
+  const handleDragEnd = (index?: number) => {
     if (draggingIndex !== null && !isDragging.current && index !== undefined) {
       setSelectedIndex(index === selectedIndex ? null : index)
     }
@@ -124,7 +166,7 @@ function App() {
     setSelectedIndex(null)
   }
 
-  const handleCanvasClick = (e: React.MouseEvent) => {
+  const handleCanvasClick = (e: React.MouseEvent | React.TouchEvent) => {
     if (e.target === e.currentTarget) {
       setSelectedIndex(null)
     }
@@ -153,15 +195,25 @@ function App() {
     )
   }
 
+  const canvasHeight = tileSize.height * 4 + GAP * 3
+
   return (
     <div
       className="game"
-      onMouseMove={handleMouseMove}
-      onMouseUp={() => handleMouseUp()}
+      onMouseMove={handleDragMove}
+      onMouseUp={() => handleDragEnd()}
       onMouseLeave={() => setDraggingIndex(null)}
+      onTouchMove={handleDragMove}
+      onTouchEnd={() => handleDragEnd()}
     >
       <h1>Connections</h1>
-      <div className="canvas" onClick={handleCanvasClick}>
+      <div
+        className="canvas"
+        ref={canvasRef}
+        style={{ height: canvasHeight }}
+        onClick={handleCanvasClick}
+        onTouchStart={handleCanvasClick}
+      >
         {tiles.map((tile, index) => (
           <div key={tile.word} className="tile-container">
             <button
@@ -169,11 +221,16 @@ function App() {
               style={{
                 left: tile.x,
                 top: tile.y,
+                width: tileSize.width,
+                height: tileSize.height,
                 zIndex: draggingIndex === index ? 10 : 1,
                 backgroundColor: getBackgroundColor(tile),
+                fontSize: tileSize.width < 100 ? '0.7rem' : '0.9rem',
               }}
-              onMouseDown={(e) => handleMouseDown(e, index)}
-              onMouseUp={() => handleMouseUp(index)}
+              onMouseDown={(e) => handleDragStart(e, index)}
+              onMouseUp={() => handleDragEnd(index)}
+              onTouchStart={(e) => handleDragStart(e, index)}
+              onTouchEnd={() => handleDragEnd(index)}
             >
               {tile.word}
             </button>
@@ -182,8 +239,8 @@ function App() {
               <div
                 className="color-popup"
                 style={{
-                  left: tile.x + TILE_WIDTH / 2,
-                  top: tile.y + TILE_HEIGHT + 8,
+                  left: tile.x + tileSize.width / 2,
+                  top: tile.y + tileSize.height + 8,
                 }}
               >
                 {COLORS.map((color) => (
