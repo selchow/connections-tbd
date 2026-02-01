@@ -1,5 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import './App.css'
+
+const TILE_WIDTH = 130
+const TILE_HEIGHT = 80
+const GAP = 8
 
 const COLORS = [
   { name: 'yellow', value: '#f9df6d' },
@@ -12,6 +16,8 @@ type ColorName = 'yellow' | 'green' | 'blue' | 'purple' | null
 
 interface TileData {
   word: string
+  x: number
+  y: number
   color: ColorName
 }
 
@@ -24,6 +30,16 @@ interface ConnectionsResponse {
   categories: ConnectionsCategory[]
 }
 
+
+function createTiles(words: string[]): TileData[] {
+  return words.map((word, index) => ({
+    word,
+    x: (index % 4) * (TILE_WIDTH + GAP),
+    y: Math.floor(index / 4) * (TILE_HEIGHT + GAP),
+    color: null,
+  }))
+}
+
 function getTodayDate(): string {
   const today = new Date()
   return today.toISOString().split('T')[0]
@@ -33,9 +49,10 @@ function App() {
   const [tiles, setTiles] = useState<TileData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const dragOffset = useRef({ x: 0, y: 0 })
+  const isDragging = useRef(false)
 
   useEffect(() => {
     async function fetchPuzzle() {
@@ -50,9 +67,11 @@ function App() {
         }
         const data: ConnectionsResponse = await response.json()
 
+        // Flatten all cards and sort by position to match game order
         const allCards = data.categories.flatMap((cat) => cat.cards)
         allCards.sort((a, b) => a.position - b.position)
-        setTiles(allCards.map((card) => ({ word: card.content, color: null })))
+        const words = allCards.map((card) => card.content)
+        setTiles(createTiles(words))
         setLoading(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -63,63 +82,64 @@ function App() {
     fetchPuzzle()
   }, [])
 
-  const handleTileClick = (index: number) => {
-    if (draggedIndex !== null) return
-    setSelectedIndex(index === selectedIndex ? null : index)
+  const getClientPos = (e: React.MouseEvent | React.TouchEvent) => {
+    if ('touches' in e && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    if ('clientX' in e) {
+      return { x: e.clientX, y: e.clientY }
+    }
+    return { x: 0, y: 0 }
+  }
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, index: number) => {
+    const tile = tiles[index]
+    const pos = getClientPos(e)
+    dragOffset.current = {
+      x: pos.x - tile.x,
+      y: pos.y - tile.y,
+    }
+    setDraggingIndex(index)
+    isDragging.current = false
+  }
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (draggingIndex === null) return
+
+    isDragging.current = true
+    const pos = getClientPos(e)
+    const newTiles = [...tiles]
+    newTiles[draggingIndex] = {
+      ...newTiles[draggingIndex],
+      x: pos.x - dragOffset.current.x,
+      y: pos.y - dragOffset.current.y,
+    }
+    setTiles(newTiles)
+  }
+
+  const handleDragEnd = (index?: number) => {
+    if (draggingIndex !== null && !isDragging.current && index !== undefined) {
+      setSelectedIndex(index === selectedIndex ? null : index)
+    }
+    setDraggingIndex(null)
   }
 
   const handleColorSelect = (color: ColorName) => {
     if (selectedIndex === null) return
 
-    setTiles((prev) =>
-      prev.map((tile, i) =>
-        i === selectedIndex
-          ? { ...tile, color: tile.color === color ? null : color }
-          : tile
-      )
-    )
-    setSelectedIndex(null)
-  }
-
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index)
-    setSelectedIndex(null)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    if (draggedIndex !== null && draggedIndex !== index) {
-      setDragOverIndex(index)
+    const newTiles = [...tiles]
+    newTiles[selectedIndex] = {
+      ...newTiles[selectedIndex],
+      color: newTiles[selectedIndex].color === color ? null : color,
     }
+    setTiles(newTiles)
+    setSelectedIndex(null)
   }
 
-  const handleDragLeave = () => {
-    setDragOverIndex(null)
-  }
-
-  const handleDrop = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    if (draggedIndex === null || draggedIndex === index) return
-
-    setTiles((prev) => {
-      const newTiles = [...prev]
-      const [draggedTile] = newTiles.splice(draggedIndex, 1)
-      newTiles.splice(index, 0, draggedTile)
-      return newTiles
-    })
-    setDraggedIndex(null)
-    setDragOverIndex(null)
-  }
-
-  const handleDragEnd = () => {
-    setDraggedIndex(null)
-    setDragOverIndex(null)
-  }
-
-  const handleTouchStart = (index: number) => {
-    // On touch, just select for color picking
-    setSelectedIndex(index === selectedIndex ? null : index)
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setSelectedIndex(null)
+    }
   }
 
   const getBackgroundColor = (tile: TileData) => {
@@ -131,7 +151,7 @@ function App() {
     return (
       <div className="game">
         <h1>Connections</h1>
-        <p className="loading">Loading today's puzzle...</p>
+        <p>Loading today's puzzle...</p>
       </div>
     )
   }
@@ -146,37 +166,48 @@ function App() {
   }
 
   return (
-    <div className="game" onClick={() => setSelectedIndex(null)}>
+    <div
+      className="game"
+      onMouseMove={handleDragMove}
+      onMouseUp={() => handleDragEnd()}
+      onMouseLeave={() => setDraggingIndex(null)}
+      onTouchMove={handleDragMove}
+      onTouchEnd={() => handleDragEnd()}
+    >
       <h1>Connections</h1>
-      <div className="grid" onClick={(e) => e.stopPropagation()}>
+      <div className="canvas" onClick={handleCanvasClick}>
         {tiles.map((tile, index) => (
-          <div key={tile.word} className="tile-wrapper">
+          <div key={tile.word} className="tile-container">
             <button
-              className={`tile ${draggedIndex === index ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''} ${selectedIndex === index ? 'selected' : ''}`}
-              style={{ backgroundColor: getBackgroundColor(tile) }}
-              draggable
-              onClick={() => handleTileClick(index)}
-              onTouchEnd={() => handleTouchStart(index)}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, index)}
-              onDragEnd={handleDragEnd}
+              className={`tile ${draggingIndex === index ? 'dragging' : ''} ${selectedIndex === index ? 'selected' : ''}`}
+              style={{
+                left: tile.x,
+                top: tile.y,
+                zIndex: draggingIndex === index ? 10 : 1,
+                backgroundColor: getBackgroundColor(tile),
+              }}
+              onMouseDown={(e) => handleDragStart(e, index)}
+              onMouseUp={() => handleDragEnd(index)}
+              onTouchStart={(e) => handleDragStart(e, index)}
+              onTouchEnd={() => handleDragEnd(index)}
             >
               {tile.word}
             </button>
 
             {selectedIndex === index && (
-              <div className="color-popup">
+              <div
+                className="color-popup"
+                style={{
+                  left: tile.x + TILE_WIDTH / 2,
+                  top: tile.y + TILE_HEIGHT + 8,
+                }}
+              >
                 {COLORS.map((color) => (
                   <button
                     key={color.name}
                     className={`color-option ${tile.color === color.name ? 'active' : ''}`}
                     style={{ backgroundColor: color.value }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleColorSelect(color.name as ColorName)
-                    }}
+                    onClick={() => handleColorSelect(color.name as ColorName)}
                   />
                 ))}
               </div>
