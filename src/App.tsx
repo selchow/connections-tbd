@@ -58,9 +58,9 @@ function App() {
     async function fetchPuzzle() {
       try {
         const date = getTodayDate()
-        // TODO: Add CORS proxy for local dev (e.g. corsproxy.io)
+        const apiUrl = `https://www.nytimes.com/svc/connections/v2/${date}.json`
         const response = await fetch(
-          `https://www.nytimes.com/svc/connections/v2/${date}.json`
+          `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`
         )
         if (!response.ok) {
           throw new Error('Failed to fetch puzzle')
