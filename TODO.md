@@ -1,7 +1,7 @@
 # TODO
 
 ## High Priority
-- [ ] Replace corsproxy.io with our own proxy (serverless function on Vercel/Netlify)
+- [ ] Fetch live puzzle data from NYT Connections API (need CORS proxy or serverless function)
 
 ## Future Ideas
 - [ ]

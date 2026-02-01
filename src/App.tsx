@@ -1,7 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import './App.css'
-
-const GAP = 8
 
 const COLORS = [
   { name: 'yellow', value: '#f9df6d' },
@@ -14,116 +12,27 @@ type ColorName = 'yellow' | 'green' | 'blue' | 'purple' | null
 
 interface TileData {
   word: string
-  x: number
-  y: number
   color: ColorName
+  dragOffset?: { x: number; y: number }
 }
 
-interface ConnectionsCategory {
-  title: string
-  cards: { content: string; position: number }[]
-}
-
-interface ConnectionsResponse {
-  categories: ConnectionsCategory[]
-}
-
-function getTodayDate(): string {
-  const today = new Date()
-  return today.toISOString().split('T')[0]
-}
+// Mock data - TODO: fetch from NYT API
+const MOCK_WORDS = [
+  'MARS', 'SNICKERS', 'TWIX', 'BOUNTY',
+  'VENUS', 'MERCURY', 'SATURN', 'JUPITER',
+  'FREDDIE', 'BRIAN', 'ROGER', 'JOHN',
+  'BREAK', 'KIT', 'KAT', 'BAR',
+]
 
 function App() {
-  const [words, setWords] = useState<string[]>([])
-  const [tiles, setTiles] = useState<TileData[]>([])
-  const [tileSize, setTileSize] = useState(100)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [tiles, setTiles] = useState<TileData[]>(
+    MOCK_WORDS.map((word) => ({ word, color: null }))
+  )
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const dragOffset = useRef({ x: 0, y: 0 })
+  const dragStart = useRef({ x: 0, y: 0 })
   const isDragging = useRef(false)
 
-  const createTiles = useCallback((wordList: string[], size: number): TileData[] => {
-    return wordList.map((word, index) => ({
-      word,
-      x: (index % 4) * (size + GAP),
-      y: Math.floor(index / 4) * (size + GAP),
-      color: null,
-    }))
-  }, [])
-
-  // Calculate tile size based on canvas width
-  const updateTileSize = useCallback(() => {
-    if (canvasRef.current) {
-      const canvasWidth = canvasRef.current.offsetWidth
-      const newTileSize = (canvasWidth - GAP * 3) / 4
-      setTileSize(newTileSize)
-      return newTileSize
-    }
-    return tileSize
-  }, [tileSize])
-
-  // Update tile positions when size changes
-  useEffect(() => {
-    if (words.length > 0) {
-      setTiles(prev => {
-        // Preserve colors when repositioning
-        const colors = new Map(prev.map(t => [t.word, t.color]))
-        return words.map((word, index) => ({
-          word,
-          x: (index % 4) * (tileSize + GAP),
-          y: Math.floor(index / 4) * (tileSize + GAP),
-          color: colors.get(word) || null,
-        }))
-      })
-    }
-  }, [tileSize, words])
-
-  // Handle resize
-  useEffect(() => {
-    const handleResize = () => updateTileSize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [updateTileSize])
-
-  // Initial size calculation after mount
-  useEffect(() => {
-    updateTileSize()
-  }, [updateTileSize])
-
-  // Fetch puzzle
-  useEffect(() => {
-    async function fetchPuzzle() {
-      try {
-        const date = getTodayDate()
-        const apiUrl = `https://www.nytimes.com/svc/connections/v2/${date}.json`
-        const response = await fetch(
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`
-        )
-        if (!response.ok) {
-          throw new Error('Failed to fetch puzzle')
-        }
-        const data: ConnectionsResponse = await response.json()
-
-        const allCards = data.categories.flatMap((cat) => cat.cards)
-        allCards.sort((a, b) => a.position - b.position)
-        const wordList = allCards.map((card) => card.content)
-        setWords(wordList)
-
-        // Calculate initial tile size and create tiles
-        const size = updateTileSize()
-        setTiles(createTiles(wordList, size))
-        setLoading(false)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error')
-        setLoading(false)
-      }
-    }
-
-    fetchPuzzle()
-  }, [createTiles, updateTileSize])
 
   const getClientPos = (e: React.MouseEvent | React.TouchEvent) => {
     if ('touches' in e && e.touches.length > 0) {
@@ -136,13 +45,8 @@ function App() {
   }
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, index: number) => {
-    const tile = tiles[index]
     const pos = getClientPos(e)
-    const canvasRect = canvasRef.current?.getBoundingClientRect()
-    dragOffset.current = {
-      x: pos.x - (canvasRect?.left || 0) - tile.x,
-      y: pos.y - (canvasRect?.top || 0) - tile.y,
-    }
+    dragStart.current = { x: pos.x, y: pos.y }
     setDraggingIndex(index)
     isDragging.current = false
   }
@@ -150,21 +54,34 @@ function App() {
   const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (draggingIndex === null) return
 
-    isDragging.current = true
     const pos = getClientPos(e)
-    const canvasRect = canvasRef.current?.getBoundingClientRect()
-    const newTiles = [...tiles]
-    newTiles[draggingIndex] = {
-      ...newTiles[draggingIndex],
-      x: pos.x - (canvasRect?.left || 0) - dragOffset.current.x,
-      y: pos.y - (canvasRect?.top || 0) - dragOffset.current.y,
+    const dx = pos.x - dragStart.current.x
+    const dy = pos.y - dragStart.current.y
+
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      isDragging.current = true
     }
-    setTiles(newTiles)
+
+    setTiles((prev) =>
+      prev.map((tile, i) =>
+        i === draggingIndex ? { ...tile, dragOffset: { x: dx, y: dy } } : tile
+      )
+    )
   }
 
   const handleDragEnd = (index?: number) => {
-    if (draggingIndex !== null && !isDragging.current && index !== undefined) {
-      setSelectedIndex(index === selectedIndex ? null : index)
+    if (draggingIndex !== null) {
+      // Clear drag offset
+      setTiles((prev) =>
+        prev.map((tile, i) =>
+          i === draggingIndex ? { ...tile, dragOffset: undefined } : tile
+        )
+      )
+
+      // If it was a click (not a drag), toggle selection
+      if (!isDragging.current && index !== undefined) {
+        setSelectedIndex(index === selectedIndex ? null : index)
+      }
     }
     setDraggingIndex(null)
   }
@@ -172,19 +89,14 @@ function App() {
   const handleColorSelect = (color: ColorName) => {
     if (selectedIndex === null) return
 
-    const newTiles = [...tiles]
-    newTiles[selectedIndex] = {
-      ...newTiles[selectedIndex],
-      color: newTiles[selectedIndex].color === color ? null : color,
-    }
-    setTiles(newTiles)
+    setTiles((prev) =>
+      prev.map((tile, i) =>
+        i === selectedIndex
+          ? { ...tile, color: tile.color === color ? null : color }
+          : tile
+      )
+    )
     setSelectedIndex(null)
-  }
-
-  const handleCanvasClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      setSelectedIndex(null)
-    }
   }
 
   const getBackgroundColor = (tile: TileData) => {
@@ -192,55 +104,32 @@ function App() {
     return COLORS.find((c) => c.name === tile.color)?.value || '#efefe6'
   }
 
-  const canvasHeight = tileSize * 4 + GAP * 3
-
-  if (loading) {
-    return (
-      <div className="game">
-        <h1>Connections</h1>
-        <p>Loading today's puzzle...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="game">
-        <h1>Connections</h1>
-        <p className="error">Error: {error}</p>
-      </div>
-    )
-  }
-
   return (
     <div
       className="game"
       onMouseMove={handleDragMove}
       onMouseUp={() => handleDragEnd()}
-      onMouseLeave={() => setDraggingIndex(null)}
+      onMouseLeave={() => handleDragEnd()}
       onTouchMove={handleDragMove}
       onTouchEnd={() => handleDragEnd()}
     >
       <h1>Connections</h1>
-      <div
-        className="canvas"
-        ref={canvasRef}
-        style={{ height: canvasHeight }}
-        onClick={handleCanvasClick}
-      >
+      <div className="grid" onClick={() => setSelectedIndex(null)}>
         {tiles.map((tile, index) => (
-          <div key={tile.word} className="tile-container">
+          <div key={tile.word} className="tile-wrapper">
             <button
               className={`tile ${draggingIndex === index ? 'dragging' : ''} ${selectedIndex === index ? 'selected' : ''}`}
               style={{
-                left: tile.x,
-                top: tile.y,
-                width: tileSize,
-                height: tileSize,
-                zIndex: draggingIndex === index ? 10 : 1,
                 backgroundColor: getBackgroundColor(tile),
+                transform: tile.dragOffset
+                  ? `translate(${tile.dragOffset.x}px, ${tile.dragOffset.y}px) scale(1.05)`
+                  : undefined,
+                zIndex: draggingIndex === index ? 10 : 1,
               }}
-              onMouseDown={(e) => handleDragStart(e, index)}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                handleDragStart(e, index)
+              }}
               onMouseUp={() => handleDragEnd(index)}
               onTouchStart={(e) => handleDragStart(e, index)}
               onTouchEnd={() => handleDragEnd(index)}
@@ -249,19 +138,16 @@ function App() {
             </button>
 
             {selectedIndex === index && (
-              <div
-                className="color-popup"
-                style={{
-                  left: tile.x + tileSize / 2,
-                  top: tile.y + tileSize + 8,
-                }}
-              >
+              <div className="color-popup">
                 {COLORS.map((color) => (
                   <button
                     key={color.name}
                     className={`color-option ${tile.color === color.name ? 'active' : ''}`}
                     style={{ backgroundColor: color.value }}
-                    onClick={() => handleColorSelect(color.name as ColorName)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleColorSelect(color.name as ColorName)
+                    }}
                   />
                 ))}
               </div>
