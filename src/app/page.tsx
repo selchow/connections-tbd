@@ -275,20 +275,17 @@ export default function Home() {
                   handleDragEnd(index);
                 }
               }}
-              onClick={(e) => {
-                if (isSelectingOneAway) {
-                  e.stopPropagation();
-                  handleTileClick(tile.word);
-                }
-              }}
               onTouchStart={(e) => {
                 e.stopPropagation();
                 if (!isSelectingOneAway) {
                   handleDragStart(e, index);
                 }
               }}
-              onTouchEnd={() => {
-                if (!isSelectingOneAway) {
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                if (isSelectingOneAway) {
+                  handleTileClick(tile.word);
+                } else {
                   handleDragEnd(index);
                 }
               }}
