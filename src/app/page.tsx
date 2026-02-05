@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const COLORS = [
   { name: "yellow", value: "#f9df6d" },
@@ -31,7 +37,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [colorPickerIndex, setColorPickerIndex] = useState<number | null>(null);
   const dragStart = useRef({ x: 0, y: 0 });
   const startOffset = useRef({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -39,7 +45,6 @@ export default function Home() {
   useEffect(() => {
     async function fetchPuzzle() {
       try {
-        // Use local date, not UTC
         const today = new Date();
         const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
         const response = await fetch(`/api/puzzle?date=${date}`);
@@ -48,7 +53,6 @@ export default function Home() {
         }
         const data: PuzzleData = await response.json();
 
-        // Extract words from all categories and shuffle them
         const words = data.categories
           .flatMap((cat) => cat.cards.map((card) => card.content))
           .sort(() => Math.random() - 0.5);
@@ -115,25 +119,25 @@ export default function Home() {
 
   const handleDragEnd = (index?: number) => {
     if (draggingIndex !== null) {
-      // If it was a click (not a drag), toggle selection
+      // If it was a click (not a drag), open the color picker
       if (!isDragging.current && index !== undefined) {
-        setSelectedIndex(index === selectedIndex ? null : index);
+        setColorPickerIndex(index);
       }
     }
     setDraggingIndex(null);
   };
 
   const handleColorSelect = (color: ColorName) => {
-    if (selectedIndex === null) return;
+    if (colorPickerIndex === null) return;
 
     setTiles((prev) =>
       prev.map((tile, i) =>
-        i === selectedIndex
+        i === colorPickerIndex
           ? { ...tile, color: tile.color === color ? null : color }
           : tile,
       ),
     );
-    setSelectedIndex(null);
+    setColorPickerIndex(null);
   };
 
   const getBackgroundColor = (tile: TileData) => {
@@ -169,11 +173,11 @@ export default function Home() {
       onTouchEnd={() => handleDragEnd()}
     >
       <h1>Connections</h1>
-      <div className="grid" onClick={() => setSelectedIndex(null)}>
+      <div className="grid">
         {tiles.map((tile, index) => (
           <div key={tile.word} className="tile-wrapper">
             <button
-              className={`tile ${draggingIndex === index ? "dragging" : ""} ${selectedIndex === index ? "selected" : ""}`}
+              className={`tile ${draggingIndex === index ? "dragging" : ""}`}
               style={{
                 backgroundColor: getBackgroundColor(tile),
                 transform: `translate(${tile.offset.x}px, ${tile.offset.y}px)${draggingIndex === index ? " scale(1.05)" : ""}`,
@@ -189,30 +193,32 @@ export default function Home() {
             >
               {tile.word}
             </button>
-
-            {selectedIndex === index && (
-              <div
-                className="color-popup"
-                style={{
-                  transform: `translate(${tile.offset.x}px, ${tile.offset.y}px)`,
-                }}
-              >
-                {COLORS.map((color) => (
-                  <button
-                    key={color.name}
-                    className={`color-option ${tile.color === color.name ? "active" : ""}`}
-                    style={{ backgroundColor: color.value }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleColorSelect(color.name as ColorName);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
           </div>
         ))}
       </div>
+
+      <Dialog
+        open={colorPickerIndex !== null}
+        onOpenChange={(open) => !open && setColorPickerIndex(null)}
+      >
+        <DialogContent showCloseButton={false} className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-center">
+              {colorPickerIndex !== null && tiles[colorPickerIndex]?.word}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center gap-4">
+            {COLORS.map((color) => (
+              <button
+                key={color.name}
+                className={`color-option ${colorPickerIndex !== null && tiles[colorPickerIndex]?.color === color.name ? "active" : ""}`}
+                style={{ backgroundColor: color.value }}
+                onClick={() => handleColorSelect(color.name as ColorName)}
+              />
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
