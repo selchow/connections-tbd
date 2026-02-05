@@ -72,9 +72,10 @@ export default function Home() {
         }
         const data: PuzzleData = await response.json();
 
-        const words = data.categories.flatMap((cat) =>
-          cat.cards.map((card) => card.content),
-        );
+        const words = data.categories
+          .flatMap((cat) => cat.cards)
+          .sort((a, b) => a.position - b.position)
+          .map((card) => card.content);
 
         setTiles(
           words.map((word) => ({ word, color: null, offset: { x: 0, y: 0 } })),
