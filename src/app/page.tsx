@@ -262,11 +262,14 @@ export default function Home() {
                   : undefined,
                 outlineOffset: isWordInOneAway(tile.word) ? "-4px" : undefined,
               }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 if (isSelectingOneAway) {
                   handleTileClick(tile.word);
-                } else {
+                }
+              }}
+              onMouseDown={(e) => {
+                if (!isSelectingOneAway) {
+                  e.stopPropagation();
                   handleDragStart(e, index);
                 }
               }}
@@ -276,16 +279,13 @@ export default function Home() {
                 }
               }}
               onTouchStart={(e) => {
-                e.stopPropagation();
                 if (!isSelectingOneAway) {
+                  e.stopPropagation();
                   handleDragStart(e, index);
                 }
               }}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                if (isSelectingOneAway) {
-                  handleTileClick(tile.word);
-                } else {
+              onTouchEnd={() => {
+                if (!isSelectingOneAway) {
                   handleDragEnd(index);
                 }
               }}
