@@ -276,6 +276,7 @@ export default function Home() {
                 }
               }}
               onTouchStart={(e) => {
+                e.stopPropagation();
                 if (isSelectingOneAway) {
                   handleTileClick(tile.word);
                 } else {
